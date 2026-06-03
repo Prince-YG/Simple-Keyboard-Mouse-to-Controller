@@ -6,8 +6,15 @@ from pynput import keyboard as pynput_keyboard, mouse as pynput_mouse
 import sys
 import os
 import keyboard
-import MainFuncs
-from MainFuncs import MapButton, MapAxis, FindRealated, FindRealatedAxis, XUSB_GAMEPAD, AXIS_MAP, RunConverter
+
+
+from Mappings import map_button, open_and_save_file,load_config,default_config,lookup_map
+from InputOutputLoop import run_converter
+import InputOutputLoop
+import Inputs
+import Mappings
+
+Mappings.load_config()
 
 app = ctk.CTk()
 app.title("Controller Mapper")
@@ -16,14 +23,13 @@ app.after(100, lambda: app.attributes("-topmost", True))
 app.after(200, lambda: app.attributes("-topmost", False))
 
 
-
-
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
+
 
 BASE = resource_path("Images")
 
@@ -45,46 +51,44 @@ button_map = {
 }
 
 stick_map = {
-    "LEFT(Left Stick)":   "LEFT_X_NEG",
-    "RIGHT(Left Stick)":  "LEFT_X_POS",
-    "UP(Left Stick)":     "LEFT_Y_NEG",
-    "DOWN(Left Stick)":   "LEFT_Y_POS",
-    "LEFT(Right Stick)":  "RIGHT_X_NEG",
-    "RIGHT(Right Stick)": "RIGHT_X_POS",
-    "UP(Right Stick)":    "RIGHT_Y_NEG",
-    "DOWN(Right Stick)":  "RIGHT_Y_POS",
+    "LEFT(Left Stick)":   "A_LEFT_X_NEG",
+    "RIGHT(Left Stick)":  "A_LEFT_X_POS",
+    "UP(Left Stick)":     "A_LEFT_Y_NEG",
+    "DOWN(Left Stick)":   "A_LEFT_Y_POS",
+    "LEFT(Right Stick)":  "A_RIGHT_X_NEG",
+    "RIGHT(Right Stick)": "A_RIGHT_X_POS",
+    "UP(Right Stick)":    "A_RIGHT_Y_NEG",
+    "DOWN(Right Stick)":  "A_RIGHT_Y_POS",
 }
 
 image_refs = []
 
-SYSTEM_ON = False
-SUPPRESS_ON = False
-MOUSEcontrolL = False
-MOUSEcontrolR = False
+system_on = False
+suppress_on = False
+mouse_control_l = False
+mouse_control_r = False
+
 
 def stop_converter():
-    MainFuncs.running = False
+    Inputs.running = False
     keyboard.unhook_all()
-
-    if getattr(MainFuncs, "mouse_listener", None):
+    if getattr(InputOutputLoop, "mouse_listener", None):
         try:
-            MainFuncs.mouse_listener.stop()
+            InputOutputLoop.mouse_listener.stop()
         except:
             pass
-        MainFuncs.mouse_listener = None
+        InputOutputLoop.mouse_listener = None
+
 
 def start_converter():
-    MainFuncs.running = True
-    threading.Thread(target=lambda: RunConverter(SUPPRESS_ON), daemon=True).start()
+    threading.Thread(target=lambda: run_converter(suppress_on), daemon=True).start()
 
 def sync_system_button():
-    toggle_btn.configure(
-        text="SYSTEM: ON" if SYSTEM_ON else "SYSTEM: OFF"
-    )
+    toggle_btn.configure(text="SYSTEM: ON" if system_on else "SYSTEM: OFF")
 
 
 def restart_if_running():
-    if SYSTEM_ON:
+    if system_on:
         stop_converter()
         time.sleep(0.05)
         start_converter()
@@ -99,12 +103,30 @@ def load_img(path, size=(28, 28)):
 
 def get_current_mapping(name):
     if name in button_map:
-        val = XUSB_GAMEPAD.get(button_map[name], "")
+        val = Mappings.default_config["buttons"].get(button_map[name], "")
         return val if val else None
     elif name in stick_map:
-        val = AXIS_MAP.get(stick_map[name], "")
+        val = Mappings.default_config["axes"].get(stick_map[name], "")
         return val if val else None
     return None
+
+
+def find_related(value):
+    for gamepad_input, bound_key in Mappings.default_config["buttons"].items():
+        if bound_key == value:
+            return gamepad_input
+    return None
+
+
+def find_related_axis(value):
+    for gamepad_input, bound_key in Mappings.default_config["axes"].items():
+        if bound_key == value:
+            return gamepad_input
+    return None
+
+
+def map_axis(name, value):
+    map_button(name, value)
 
 
 def MapButtonToMapping(btn, name):
@@ -137,7 +159,7 @@ def MapButtonToMapping(btn, name):
             return
 
         value = result["value"]
-        existing_owner = FindRealated(value) or FindRealatedAxis(value)
+        existing_owner = find_related(value) or find_related_axis(value)
 
         if existing_owner:
             btn.configure(
@@ -147,9 +169,9 @@ def MapButtonToMapping(btn, name):
             app.after(2000, lambda: restore_btn_label(btn, name))
         else:
             if name in stick_map:
-                MapAxis(stick_map[name], value)
+                map_axis(stick_map[name], value)
             elif name in button_map:
-                MapButton(button_map[name], value)
+                map_button(button_map[name], value)
             else:
                 restore_btn_label(btn, name)
                 return
@@ -168,29 +190,32 @@ def restore_btn_label(btn, name):
         fg_color=("green4", "darkgreen") if mapping else ("gray75", "gray25"),
     )
 
+
 Tframe = ctk.CTkFrame(app)
 Tframe.pack(padx=20, pady=(16, 8), fill="x")
 
+
 def toggle_system():
-    global SYSTEM_ON
-    SYSTEM_ON = not SYSTEM_ON
+    global system_on
+    system_on = not system_on
     sync_system_button()
-    if SYSTEM_ON:
+    if system_on:
         start_converter()
     else:
         stop_converter()
 
 
 def monitor_converter_state():
-    global SYSTEM_ON
-
+    global system_on
     while True:
         time.sleep(1)
-
-        if SYSTEM_ON and not getattr(MainFuncs, "running", False):
-            SYSTEM_ON = False
+        if system_on and not getattr(Inputs, "running", False):
+            system_on = False
             app.after(0, sync_system_button)
+
+
 threading.Thread(target=monitor_converter_state, daemon=True).start()
+
 ctk.CTkLabel(Tframe, text="Controller Mapper",
              font=ctk.CTkFont(size=18, weight="bold")).pack(pady=8)
 toggle_btn = ctk.CTkButton(Tframe, text="SYSTEM: OFF", command=toggle_system)
@@ -280,7 +305,6 @@ for label, img_file in sticks_config:
     btn.configure(command=lambda b=btn, n=label: MapButtonToMapping(b, n))
     btn.pack(side="left", fill="x", expand=True, padx=(0, 4))
 
-
 containerSet = ctk.CTkFrame(app, width=400, height=200)
 containerSet.pack(padx=20, pady=(0, 16))
 containerSet.pack_propagate(False)
@@ -289,56 +313,54 @@ Sframe = ctk.CTkScrollableFrame(containerSet, label_text="Settings")
 Sframe.pack(fill="both", expand=True)
 
 
-def MouseSwitch(mode):
-    global MOUSEcontrolL, MOUSEcontrolR
+def mouse_switch(mode):
+    global mouse_control_l, mouse_control_r
     if mode == "L":
-        MOUSEcontrolL = not MOUSEcontrolL
-        if MOUSEcontrolL:
-            MOUSEcontrolR = False
+        mouse_control_l = not mouse_control_l
+        if mouse_control_l:
+            mouse_control_r = False
     elif mode == "R":
-        MOUSEcontrolR = not MOUSEcontrolR
-        if MOUSEcontrolR:
-            MOUSEcontrolL = False
+        mouse_control_r = not mouse_control_r
+        if mouse_control_r:
+            mouse_control_l = False
 
-    if MOUSEcontrolL:
-        MapAxis("LEFT_MOUSE", "1")
-        MapAxis("RIGHT_MOUSE", "0")
-    elif MOUSEcontrolR:
-        MapAxis("RIGHT_MOUSE", "1")
-        MapAxis("LEFT_MOUSE", "0")
+    if mouse_control_l:
+        map_axis("A_LEFT_MOUSE", "1")
+        map_axis("A_RIGHT_MOUSE", "0")
+    elif mouse_control_r:
+        map_axis("A_RIGHT_MOUSE", "1")
+        map_axis("A_LEFT_MOUSE", "0")
     else:
-        MapAxis("LEFT_MOUSE", "0")
-        MapAxis("RIGHT_MOUSE", "0")
+        map_axis("A_LEFT_MOUSE", "0")
+        map_axis("A_RIGHT_MOUSE", "0")
 
-    print(FindRealatedAxis(str(1)))
-    LmouseSwitch.configure(text="ON" if FindRealatedAxis(str(1)) == "LEFT_MOUSE" else "OFF")
-    RmouseSwitch.configure(text="ON" if FindRealatedAxis(str(1)) == "RIGHT_MOUSE" else "OFF")
-   
+    l_mouse_switch.configure(text="ON" if find_related_axis("1") == "A_LEFT_MOUSE" else "OFF")
+    r_mouse_switch.configure(text="ON" if find_related_axis("1") == "A_RIGHT_MOUSE" else "OFF")
+
     restart_if_running()
 
 
 def toggle_suppress():
-    global SUPPRESS_ON
-    SUPPRESS_ON = not SUPPRESS_ON
-    suppress_btn.configure(text="ON" if SUPPRESS_ON else "OFF")
+    global suppress_on
+    suppress_on = not suppress_on
+    suppress_btn.configure(text="ON" if suppress_on else "OFF")
     restart_if_running()
 
 
 Rrow = ctk.CTkFrame(Sframe, fg_color="transparent")
 Rrow.pack(fill="x", padx=8, pady=5)
-RmouseSwitch = ctk.CTkButton(Rrow, text="OFF", width=60, command=lambda: MouseSwitch("R"))
-RmouseSwitch.pack(side="left")
+r_mouse_switch = ctk.CTkButton(Rrow, text="OFF", width=60, command=lambda: mouse_switch("R"))
+r_mouse_switch.pack(side="left")
 ctk.CTkLabel(Rrow, text="Turn on mouse control for Right Stick").pack(side="left", padx=10)
 
 Lrow = ctk.CTkFrame(Sframe, fg_color="transparent")
 Lrow.pack(fill="x", padx=8, pady=5)
-LmouseSwitch = ctk.CTkButton(Lrow, text="OFF", width=60, command=lambda: MouseSwitch("L"))
-LmouseSwitch.pack(side="left")
+l_mouse_switch = ctk.CTkButton(Lrow, text="OFF", width=60, command=lambda: mouse_switch("L"))
+l_mouse_switch.pack(side="left")
 ctk.CTkLabel(Lrow, text="Turn on mouse control for Left Stick").pack(side="left", padx=10)
 
-LmouseSwitch.configure(text="ON" if FindRealatedAxis(str(1)) == "LEFT_MOUSE" else "OFF")
-RmouseSwitch.configure(text="ON" if FindRealatedAxis(str(1)) == "RIGHT_MOUSE" else "OFF")
-   
+l_mouse_switch.configure(text="ON" if find_related_axis("1") == "A_LEFT_MOUSE" else "OFF")
+r_mouse_switch.configure(text="ON" if find_related_axis("1") == "A_RIGHT_MOUSE" else "OFF")
 
 Suprow = ctk.CTkFrame(Sframe, fg_color="transparent")
 Suprow.pack(fill="x", padx=8, pady=5)
@@ -346,5 +368,13 @@ suppress_btn = ctk.CTkButton(Suprow, text="OFF", width=60, command=toggle_suppre
 suppress_btn.pack(side="left")
 ctk.CTkLabel(Suprow, text="Suppress keyboard passthrough").pack(side="left", padx=10)
 
+
+def on_closing():
+    open_and_save_file()
+    stop_converter()
+    app.destroy()
+
+
+app.protocol("WM_DELETE_WINDOW", on_closing)
 
 app.mainloop()
