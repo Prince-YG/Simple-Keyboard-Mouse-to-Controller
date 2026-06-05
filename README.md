@@ -30,7 +30,7 @@ Mappings can be customized to fit your own preferences.
 
 ## Installation
 
-1. Install the latest ViGEmBus[https://github.com/nefarius/ViGEmBus/releases] driver.
+1. Install the latest [ViGEmBus driver](https://github.com/nefarius/ViGEmBus/releases) driver.
 2. Download the latest release of this project from GitHub.
 3. Run the application.
 4. Configure your mappings if desired.
